@@ -10,6 +10,7 @@
 class USimWorldClockComponent;
 class USimCalendarEventComponent;
 class USimWorldSchedulerComponent;
+class USimWeatherComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FSimGameOnSave, bool, bSuccess);
 
@@ -30,6 +31,9 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Simulation|Scheduler")
 	TObjectPtr<USimWorldSchedulerComponent> WorldScheduler;
+	
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Simulation|Weather")
+	TObjectPtr<USimWeatherComponent> WorldWeather;
 
 	UPROPERTY(BlueprintAssignable, Category="Simulation|Persistence")
 	FSimGameOnSave OnSave;
