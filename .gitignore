@@ -1,0 +1,33 @@
+﻿# Core UE folders
+Binaries/
+Intermediate/
+Saved/
+DerivedDataCache/
+
+# Build artifacts
+*.obj
+*.pdb
+*.idb
+*.dll
+*.dylib
+*.so
+
+# IDE folders
+.vs/
+.vscode/
+.idea/
+
+# Generated project files
+*.sln
+*.vcxproj*
+*.opensdf
+*.sdf
+*.db
+
+# Mac-specific
+.DS_Store
+
+# Backup / temp
+*.tmp
+*.log
+*.cache

@@ -1,0 +1,23 @@
+﻿{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0",
+	"FriendlyName": "SimulateThis",
+	"Description": "",
+	"Category": "Other",
+	"CreatedBy": "Space_Mex",
+	"CreatedByURL": "",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"CanContainContent": true,
+	"IsBetaVersion": false,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "SimulateThis",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	]
+}
