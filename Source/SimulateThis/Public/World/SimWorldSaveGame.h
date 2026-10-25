@@ -24,6 +24,18 @@ struct SIMULATETHIS_API FSimClockSaveData
 	int32 DaysPerSeason = 14;
 };
 
+USTRUCT(BlueprintType)
+struct SIMULATETHIS_API FSimSchedulerSaveData
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	bool bInitialized = false;
+
+	UPROPERTY()
+	int64 LastProcessedDay = -1;
+};
+
 UCLASS()
 class SIMULATETHIS_API USimWorldSaveGame : public USaveGame
 {
@@ -32,8 +44,11 @@ private:
 
 public:
 	UPROPERTY()
-	int32 SaveVersion = 1;
+	int32 SaveVersion = 2;
 
 	UPROPERTY()
 	FSimClockSaveData ClockData;
+
+	UPROPERTY()
+	FSimSchedulerSaveData SchedulerData;
 };

@@ -8,6 +8,7 @@
 #include "SimWorldSchedulerComponent.generated.h"
 
 class USimWorldClockComponent;
+struct FSimSchedulerSaveData;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FSimSumulationDayStarted, int64, NewDay);
 
@@ -26,6 +27,13 @@ public:
 	void StartScheduler();
 	void StopScheduler();
 
+	FSimSchedulerSaveData CreateSaveData() const;
+
+	bool RestoreFromSaveData(const FSimSchedulerSaveData& SaveData, double SavedGameSeconds);
+
+	UFUNCTION(BlueprintPure, Category="Simulation|Scheduler")
+	int64 GetLastProcessedDayNumber() const;
+
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
@@ -34,8 +42,9 @@ private:
 	TObjectPtr<USimWorldClockComponent> WorldClock;
 
 	FTimerHandle SchedulerTimer;
-	int64 LastDayProcessedDay = -1;
+	int64 LastProcessedDay = -1;
 	bool bRunning = false;
+	bool bHasProcessedDayState = false;
 
 	void ProcessPendingDays();
 };

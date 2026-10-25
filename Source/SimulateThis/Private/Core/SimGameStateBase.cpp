@@ -19,7 +19,13 @@ ASimGameStateBase::ASimGameStateBase()
 
 bool ASimGameStateBase::SaveWorld()
 {
-	if (!HasAuthority() || !bPersistenceReady || !WorldClock || SaveSlotName.IsEmpty()) return false;
+	if (!HasAuthority()) return false;
+
+	if (!bPersistenceReady || !WorldClock || !WorldScheduler || SaveSlotName.IsEmpty())
+	{
+		OnSave.Broadcast(false);
+		return false;
+	}
 
 	USimWorldSaveGame* SaveData = Cast<USimWorldSaveGame>(
 		UGameplayStatics::CreateSaveGameObject(USimWorldSaveGame::StaticClass()));
@@ -30,8 +36,17 @@ bool ASimGameStateBase::SaveWorld()
 		return false;
 	}
 
-	SaveData->SaveVersion = 1;
+	SaveData->SaveVersion = 2;
+
 	SaveData->ClockData = WorldClock->CreateSaveData();
+	SaveData->SchedulerData = WorldScheduler->CreateSaveData();
+
+	if (!SaveData->SchedulerData.bInitialized)
+	{
+		UE_LOG(LogTemp, Error, TEXT("Persistence: Scheduler checkpoint unavailable."));
+		OnSave.Broadcast(false);
+		return false;
+	}
 
 	const bool bSuccess = UGameplayStatics::SaveGameToSlot(SaveData, SaveSlotName, 0);
 
@@ -116,25 +131,47 @@ void ASimGameStateBase::InitializeWorldPersistence()
 	}
 }
 
+
 bool ASimGameStateBase::LoadWorld()
 {
-	if (!HasAuthority() || !WorldClock) return false;
+	if (!HasAuthority() || !WorldClock || !WorldScheduler) return false;
 
-	USaveGame* LoadedObject = UGameplayStatics::LoadGameFromSlot(SaveSlotName, 0);
-
-	USimWorldSaveGame* SaveData = Cast<USimWorldSaveGame>(LoadedObject);
+	USimWorldSaveGame* SaveData = Cast<USimWorldSaveGame>(UGameplayStatics::LoadGameFromSlot(SaveSlotName, 0));
 
 	if (!SaveData) return false;
 
-	if (SaveData->SaveVersion != 1)
+	if (SaveData->SaveVersion != 1 && SaveData->SaveVersion != 2)
 	{
 		UE_LOG(LogTemp, Error, TEXT("Persistence: Unsupported save version %d."), SaveData->SaveVersion);
 		return false;
 	}
 
-	if (!WorldClock->RestoreFromSaveData(SaveData->ClockData)) return false;
+	FSimSchedulerSaveData SchedulerSnapshot;
 
-	UE_LOG(LogTemp, Log, TEXT("Persistence: Loaded world from slot %s"), *SaveSlotName);
+	if (SaveData->SaveVersion == 2)
+	{
+		SchedulerSnapshot = SaveData->SchedulerData;
+
+		if (!SchedulerSnapshot.bInitialized)
+		{
+			UE_LOG(LogTemp, Error, TEXT("Persistence: Scheduler checkpoint missing."));
+			return false;
+		}
+	}
+
+	if (!WorldScheduler->RestoreFromSaveData(SchedulerSnapshot, SaveData->ClockData.GameSeconds))
+	{
+		UE_LOG(LogTemp, Error, TEXT("Persistence: Invalid scheduler checkpoint."));
+		return false;
+	}
+
+	if (!WorldClock->RestoreFromSaveData(SaveData->ClockData))
+	{
+		UE_LOG(LogTemp, Error, TEXT("Persistence: Failed to restore clock."));
+		return false;
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("Persistence: Loaded version %d from %s."), SaveData->SaveVersion, *SaveSlotName);
 	return true;
 }
 
