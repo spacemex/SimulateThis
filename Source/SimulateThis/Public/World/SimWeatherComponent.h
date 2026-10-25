@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "World/SimWeatherTypes.h"
 #include "SimWeatherComponent.generated.h"
 
 class USimWeatherData;
@@ -22,6 +23,15 @@ struct SIMULATETHIS_API FSimWeatherState
 
 	UPROPERTY(BlueprintReadOnly)
 	int64 AbsoluteDay = -1;
+
+	UPROPERTY(BlueprintReadOnly)
+	FSimWeatherConditions PreviousDayConditions;
+
+	UPROPERTY(BlueprintReadOnly)
+	FSimWeatherConditions TodayConditions;
+
+	UPROPERTY(BlueprintReadOnly)
+	float TransitionDurationGameSeconds = 7200.0f;
 
 	UPROPERTY(BlueprintReadOnly)
 	bool bInitialized = false;
@@ -46,6 +56,10 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Simulation|Weather")
 	int32 WeatherSeed = 12345;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Simulation|Weather",
+		meta=(ClampMin="0.0", ClampMax="24.0"))
+	float TransitionHours = 2.0f;
+
 	UPROPERTY(BlueprintAssignable, Category="Simulation|Weather")
 	FSimWeatherChanged OnWeatherChanged;
 
@@ -64,6 +78,11 @@ public:
 	UFUNCTION(BlueprintPure, Category="Simulation|Weather")
 	USimWeatherData* FindWeatherDefinition(FName WeatherId) const;
 
+	UFUNCTION(BlueprintPure, Category="Simulation|Weather")
+	FSimWeatherConditions GetCurrentConditions() const;
+
+	FSimWeatherConditions GetConditionsForDay(int64 AbsoluteDay) const;
+
 	void InitializeWeather();
 
 	FName GetWeatherIdForDay(int64 AbsoluteDay) const;
@@ -71,7 +90,7 @@ public:
 protected:
 	virtual void GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& OutLifetimeProps) const override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
-	
+
 	UPROPERTY(ReplicatedUsing=OnRep_WeatherState)
 	FSimWeatherState WeatherState;
 

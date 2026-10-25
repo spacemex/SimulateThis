@@ -42,6 +42,77 @@ USimWeatherData* USimWeatherComponent::FindWeatherDefinition(FName WeatherId) co
 	return nullptr;
 }
 
+FSimWeatherConditions USimWeatherComponent::GetCurrentConditions() const
+{
+	if (!WeatherState.bInitialized) return FSimWeatherConditions();
+
+	const USimWorldClockComponent* Clock = WorldClock.Get();
+
+	if (!Clock && GetOwner())
+	{
+		Clock = GetOwner()->FindComponentByClass<USimWorldClockComponent>();
+	}
+
+	if (!Clock || !Clock->IsClockReady()) return WeatherState.TodayConditions;
+
+	constexpr double SecondsPerDay = 86400.0;
+	const double DayStartSeconds = static_cast<double>(WeatherState.AbsoluteDay) * SecondsPerDay;
+	const double ElapsedGameSeconds = Clock->GetGameTimeSeconds() - DayStartSeconds;
+	const float Duration = WeatherState.TransitionDurationGameSeconds;
+
+	if (Duration <= 0.0f) return WeatherState.TodayConditions;
+
+	const float Alpha = FMath::Clamp(static_cast<float>(ElapsedGameSeconds / Duration), 0.0f, 1.0f);
+	const float SmoothAlpha = FMath::InterpEaseInOut(0.0f, 1.0f, Alpha, 2.0f);
+	const FSimWeatherConditions& From = WeatherState.PreviousDayConditions;
+	const FSimWeatherConditions& To = WeatherState.TodayConditions;
+
+	FSimWeatherConditions Result;
+
+	Result.TemperatureCelsius = FMath::Lerp(From.TemperatureCelsius, To.TemperatureCelsius, SmoothAlpha);
+	Result.HumidityPercent = FMath::Lerp(From.HumidityPercent, To.HumidityPercent, SmoothAlpha);
+	Result.WindSpeedKmh = FMath::Lerp(From.WindSpeedKmh, To.WindSpeedKmh, SmoothAlpha);
+	Result.CloudCoverage = FMath::Lerp(From.CloudCoverage, To.CloudCoverage, SmoothAlpha);
+	Result.PrecipitationIntensity = FMath::Lerp(From.PrecipitationIntensity, To.PrecipitationIntensity, SmoothAlpha);
+
+	return Result;
+}
+
+FSimWeatherConditions USimWeatherComponent::GetConditionsForDay(int64 AbsoluteDay) const
+{
+	FSimWeatherConditions Conditions;
+
+	if (AbsoluteDay < 0) return Conditions;
+
+	const FName WeatherId = GetWeatherIdForDay(AbsoluteDay);
+	const USimWeatherData* Definition = FindWeatherDefinition(WeatherId);
+
+	if (!Definition) return Conditions;
+
+	const uint64 DayBits = static_cast<uint64>(AbsoluteDay);
+	const uint32 DailySeed = static_cast<uint32>(WeatherSeed)
+		^ (static_cast<uint32>(DayBits) * 0x9E3779B9u)
+		^ (static_cast<uint32>(DayBits >> 32) * 0x85EBCA6Bu) ^ 0xD1B54A32u;
+
+	FRandomStream Random(static_cast<int32>(DailySeed));
+
+	auto SampleRange = [&Random](const FVector2D& Range) -> float
+	{
+		const float Minimum = static_cast<float>(FMath::Min(Range.X, Range.Y));
+		const float Maximum = static_cast<float>(FMath::Max(Range.X, Range.Y));
+
+		return FMath::Lerp(Minimum, Maximum, Random.GetFraction());
+	};
+
+	Conditions.TemperatureCelsius = SampleRange(Definition->TemperatureCelsiusRange);
+	Conditions.HumidityPercent = FMath::Clamp(SampleRange(Definition->HumidityPercentRange), 0.0f, 100.f);
+	Conditions.WindSpeedKmh = FMath::Max(0.0f, SampleRange(Definition->WindSpeedKmhRange));
+	Conditions.CloudCoverage = FMath::Clamp(SampleRange(Definition->CloudCoverageRange), 0.0f, 1.0f);
+	Conditions.PrecipitationIntensity = FMath::Clamp(SampleRange(Definition->PrecipitationIntensityRange), 0.0f, 1.0f);
+
+	return Conditions;
+}
+
 void USimWeatherComponent::InitializeWeather()
 {
 	if (!GetOwner() || !GetOwner()->HasAuthority()) return;
@@ -168,15 +239,22 @@ void USimWeatherComponent::RefreshWeather()
 		return;
 	}
 
+	const float TransitionDuration = FMath::Clamp(TransitionHours, 0.0f, 24.0f) * 3600.0f;
+
 	if (WeatherState.bInitialized && WeatherState.AbsoluteDay == CurrentDay && WeatherState.CurrentWeatherId ==
-		TodayWeather && WeatherState.TomorrowWeatherId == TomorrowWeather)
+		TodayWeather && WeatherState.TomorrowWeatherId == TomorrowWeather && FMath::IsNearlyEqual(
+			WeatherState.TransitionDurationGameSeconds, TransitionDuration))
 		return;
 
 	const FSimWeatherState PreviousState = WeatherState;
+	const int64 PreviousDay = FMath::Max(static_cast<int64>(0), CurrentDay - 1);
 
+	WeatherState.PreviousDayConditions = GetConditionsForDay(PreviousDay);
+	WeatherState.TodayConditions = GetConditionsForDay(CurrentDay);
 	WeatherState.CurrentWeatherId = TodayWeather;
 	WeatherState.TomorrowWeatherId = TomorrowWeather;
 	WeatherState.AbsoluteDay = CurrentDay;
+	WeatherState.TransitionDurationGameSeconds = TransitionDuration;
 	WeatherState.bInitialized = true;
 
 	BroadcastWeatherChanges(PreviousState);
