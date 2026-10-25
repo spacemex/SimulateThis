@@ -40,6 +40,8 @@ struct FSimClockSaveData;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FSimHourChanged, int32, NewHour);
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FSimMinuteChanged, int32, NewMinute);
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FSimDayChanaged, int32, NewDay);
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FSimSeasonChanged, ESimSeason, NewSeason, int32, CurrentYear);
@@ -59,6 +61,9 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category="Simulation|Time")
 	FSimHourChanged OnHourChanged;
+
+	UPROPERTY(BlueprintAssignable, Category="Simulation|Time")
+	FSimMinuteChanged OnMinuteChanged;
 
 	UPROPERTY(BlueprintAssignable, Category="Simulation|Time")
 	FSimDayChanaged OnDayChanged;
@@ -99,6 +104,9 @@ public:
 	UFUNCTION(BlueprintPure, Category="Simulation|Time")
 	int32 GetMinute() const;
 
+	UFUNCTION(BlueprintPure, Category="Simulation|Time")
+	float GetDayProgress() const;
+
 	UFUNCTION(BlueprintPure, Category="Simulation|Calendar")
 	FSimCalendarDate GetCalendarDate() const;
 
@@ -128,6 +136,7 @@ private:
 	void CheckCalendarEvents();
 	FTimerHandle CalendarPollHandle;
 	int64 LastObservedHour = -1;
+	int64 LastObservedMinute = -1;
 	int64 LastObservedDay = -1;
 	bool bHasClockSample = false;
 	FSimCalendarDate BuildCalendarDate(int64 AbsoluteDay) const;

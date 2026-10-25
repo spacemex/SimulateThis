@@ -74,11 +74,13 @@ void USimWorldClockComponent::CheckCalendarEvents()
 
 	const double GameSeconds = GetGameTimeSeconds();
 	const int64 CurrentHour = FMath::FloorToInt64(GameSeconds / 3600.0);
+	const int64 CurrentMinute = FMath::FloorToInt64(GameSeconds / 60.0);
 	const int64 CurrentDay = FMath::FloorToInt64(GameSeconds / 86400.0);
 
 	if (!bHasClockSample)
 	{
 		LastObservedHour = CurrentHour;
+		LastObservedMinute = CurrentMinute;
 		LastObservedDay = CurrentDay;
 		bHasClockSample = true;
 		return;
@@ -107,7 +109,13 @@ void USimWorldClockComponent::CheckCalendarEvents()
 		OnHourChanged.Broadcast(GetHour());
 	}
 
+	if (CurrentMinute != LastObservedMinute)
+	{
+		OnMinuteChanged.Broadcast(GetMinute());
+	}
+
 	LastObservedHour = CurrentHour;
+	LastObservedMinute = CurrentMinute;
 	LastObservedDay = CurrentDay;
 }
 
@@ -168,6 +176,16 @@ int32 USimWorldClockComponent::GetMinute() const
 	const int64 TotalMinutes = FMath::FloorToInt64(GetGameTimeSeconds() / 60.0);
 
 	return static_cast<int32>(TotalMinutes % 60);
+}
+
+float USimWorldClockComponent::GetDayProgress() const
+{
+	if (!IsClockReady()) return 0.0F;
+
+	constexpr double SecondsPerDay = 86400.0;
+
+	const double SecondsToday = FMath::Fmod(GetGameTimeSeconds(), SecondsPerDay);
+	return static_cast<float>(SecondsToday / SecondsPerDay);
 }
 
 FSimCalendarDate USimWorldClockComponent::GetCalendarDate() const

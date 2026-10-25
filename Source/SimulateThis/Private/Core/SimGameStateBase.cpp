@@ -6,12 +6,14 @@
 #include "Kismet/GameplayStatics.h"
 #include "World/SimWorldClockComponent.h"
 #include "World/SimCalendarEventComponent.h"
+#include "World/SimWorldSchedulerComponent.h"
 #include "World/SimWorldSaveGame.h"
 
 ASimGameStateBase::ASimGameStateBase()
 {
 	WorldClock = CreateDefaultSubobject<USimWorldClockComponent>(TEXT("WorldClock"));
 	CalendarEvents = CreateDefaultSubobject<USimCalendarEventComponent>(TEXT("CalendarEvents"));
+	WorldScheduler = CreateDefaultSubobject<USimWorldSchedulerComponent>(TEXT("WorldScheduler"));
 }
 
 
@@ -101,6 +103,11 @@ void ASimGameStateBase::InitializeWorldPersistence()
 	}
 
 	bPersistenceReady = true;
+
+	if (WorldScheduler)
+	{
+		WorldScheduler->StartScheduler();
+	}
 
 	if (AutoSaveIntervalSeconds > 0.0f)
 	{
