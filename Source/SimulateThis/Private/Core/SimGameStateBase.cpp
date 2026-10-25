@@ -2,12 +2,11 @@
 
 
 #include "Core/SimGameStateBase.h"
-
 #include "Kismet/GameplayStatics.h"
-#include "World/SimWorldClockComponent.h"
-#include "World/SimCalendarEventComponent.h"
-#include "World/SimWorldSchedulerComponent.h"
-#include "World/SimWeatherComponent.h"
+#include "World/Components/SimWorldClockComponent.h"
+#include "World/Components/SimCalendarEventComponent.h"
+#include "World/Components/SimWorldSchedulerComponent.h"
+#include "World/Components/SimWeatherComponent.h"
 #include "World/SimWorldSaveGame.h"
 
 ASimGameStateBase::ASimGameStateBase()
@@ -21,7 +20,7 @@ ASimGameStateBase::ASimGameStateBase()
 
 bool ASimGameStateBase::SaveWorld()
 {
-	if (!HasAuthority()) return false;
+	if (!HasAuthority() || !WorldWeather) return false;
 
 	if (!bPersistenceReady || !WorldClock || !WorldScheduler || SaveSlotName.IsEmpty())
 	{
@@ -38,14 +37,22 @@ bool ASimGameStateBase::SaveWorld()
 		return false;
 	}
 
-	SaveData->SaveVersion = 2;
+	SaveData->SaveVersion = 3;
 
 	SaveData->ClockData = WorldClock->CreateSaveData();
 	SaveData->SchedulerData = WorldScheduler->CreateSaveData();
+	SaveData->WeatherData = WorldWeather->CreateSaveData();
 
 	if (!SaveData->SchedulerData.bInitialized)
 	{
 		UE_LOG(LogTemp, Error, TEXT("Persistence: Scheduler checkpoint unavailable."));
+		OnSave.Broadcast(false);
+		return false;
+	}
+
+	if (!SaveData->WeatherData.bInitialized)
+	{
+		UE_LOG(LogTemp, Error, TEXT("Persistence: Weather configuration unavailable."));
 		OnSave.Broadcast(false);
 		return false;
 	}
@@ -119,12 +126,21 @@ void ASimGameStateBase::InitializeWorldPersistence()
 		UE_LOG(LogTemp, Log, TEXT("Persistence: Starting a new world."));
 	}
 
-	bPersistenceReady = true;
-
-	if (WorldWeather)
+	if (!WorldWeather)
 	{
-		WorldWeather->InitializeWeather();
+		UE_LOG(LogTemp, Error, TEXT("Persistence: WorldWeather is missing."));
+		return;
 	}
+
+	WorldWeather->InitializeWeather();
+
+	if (!WorldWeather->GetWeatherState().bInitialized)
+	{
+		UE_LOG(LogTemp, Error, TEXT("Persistence: Weather initialization failed"));
+		return;
+	}
+	
+	bPersistenceReady = true;
 
 	if (WorldScheduler)
 	{
@@ -147,15 +163,15 @@ bool ASimGameStateBase::LoadWorld()
 
 	if (!SaveData) return false;
 
-	if (SaveData->SaveVersion != 1 && SaveData->SaveVersion != 2)
+	if (SaveData->SaveVersion < 1 || SaveData->SaveVersion > 3)
 	{
-		UE_LOG(LogTemp, Error, TEXT("Persistence: Unsupported save version %d."), SaveData->SaveVersion);
+		UE_LOG(LogTemp, Error, TEXT("Persistence: Unsupported save version %d."), SaveData->SaveVersion)
 		return false;
 	}
 
 	FSimSchedulerSaveData SchedulerSnapshot;
 
-	if (SaveData->SaveVersion == 2)
+	if (SaveData->SaveVersion >= 2)
 	{
 		SchedulerSnapshot = SaveData->SchedulerData;
 
@@ -170,6 +186,15 @@ bool ASimGameStateBase::LoadWorld()
 	{
 		UE_LOG(LogTemp, Error, TEXT("Persistence: Invalid scheduler checkpoint."));
 		return false;
+	}
+
+	if (SaveData->SaveVersion >= 3)
+	{
+		if (!WorldWeather || !WorldWeather->RestoreFromSaveData(SaveData->WeatherData))
+		{
+			UE_LOG(LogTemp, Error, TEXT("Persistence: Failed to restore weather."));
+			return false;
+		}
 	}
 
 	if (!WorldClock->RestoreFromSaveData(SaveData->ClockData))

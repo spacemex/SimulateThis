@@ -6,7 +6,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "TimerManager.h"
-#include "World/SimCalendarTypes.h"
+#include "World/Types/SimCalendarTypes.h"
 #include "SimWorldClockComponent.generated.h"
 
 USTRUCT()

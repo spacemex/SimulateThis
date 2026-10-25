@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
 #include "GameplayTagContainer.h"
-#include "SimCalendarTypes.h"
+#include "Types/SimCalendarTypes.h"
 
 #include "SimCalendarEventData.generated.h"
 

@@ -1,12 +1,10 @@
 ﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 
-#include "World/SimCalendarEventComponent.h"
-
+#include "World/Components/SimCalendarEventComponent.h"
 #include "World/SimCalendarEventData.h"
-#include "World/SimWorldClockComponent.h"
-#include "World/SimCalendarTypes.h"
-
+#include "World/Components/SimWorldClockComponent.h"
+#include "World/Types/SimCalendarTypes.h"
 #include "Net/UnrealNetwork.h"
 
 

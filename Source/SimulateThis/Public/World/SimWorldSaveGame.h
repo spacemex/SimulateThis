@@ -36,6 +36,21 @@ struct SIMULATETHIS_API FSimSchedulerSaveData
 	int64 LastProcessedDay = -1;
 };
 
+USTRUCT(BlueprintType)
+struct SIMULATETHIS_API FSimWeatherSaveData
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	bool bInitialized = false;
+
+	UPROPERTY()
+	FName ClimateId = NAME_Name;
+
+	UPROPERTY()
+	int32 WeatherSeed = 12345;
+};
+
 UCLASS()
 class SIMULATETHIS_API USimWorldSaveGame : public USaveGame
 {
@@ -44,11 +59,14 @@ private:
 
 public:
 	UPROPERTY()
-	int32 SaveVersion = 2;
+	int32 SaveVersion = 3;
 
 	UPROPERTY()
 	FSimClockSaveData ClockData;
 
 	UPROPERTY()
 	FSimSchedulerSaveData SchedulerData;
+
+	UPROPERTY()
+	FSimWeatherSaveData WeatherData;
 };

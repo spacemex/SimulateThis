@@ -1,11 +1,13 @@
 ﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 
-#include "World/SimWeatherComponent.h"
+#include "World/Components/SimWeatherComponent.h"
 #include "Math/RandomStream.h"
 #include "Net/UnrealNetwork.h"
 #include "World/SimWeatherData.h"
-#include "World/SimWorldClockComponent.h"
+#include "World/SimClimateData.h"
+#include "World/SimWorldSaveGame.h"
+#include "World/Components/SimWorldClockComponent.h"
 
 
 USimWeatherComponent::USimWeatherComponent()
@@ -82,7 +84,7 @@ FSimWeatherConditions USimWeatherComponent::GetConditionsForDay(int64 AbsoluteDa
 {
 	FSimWeatherConditions Conditions;
 
-	if (AbsoluteDay < 0) return Conditions;
+	if (AbsoluteDay < 0 || !ActiveClimate || !WorldClock || !WorldClock->IsClockReady()) return Conditions;
 
 	const FName WeatherId = GetWeatherIdForDay(AbsoluteDay);
 	const USimWeatherData* Definition = FindWeatherDefinition(WeatherId);
@@ -110,12 +112,36 @@ FSimWeatherConditions USimWeatherComponent::GetConditionsForDay(int64 AbsoluteDa
 	Conditions.CloudCoverage = FMath::Clamp(SampleRange(Definition->CloudCoverageRange), 0.0f, 1.0f);
 	Conditions.PrecipitationIntensity = FMath::Clamp(SampleRange(Definition->PrecipitationIntensityRange), 0.0f, 1.0f);
 
+	const int64 DaysPerSeason = WorldClock->GetDaysPerSeason();
+
+	if (DaysPerSeason <= 0) return Conditions;
+
+	const int32 SeasonIndex = static_cast<int32>((AbsoluteDay / DaysPerSeason) % 4);
+	const ESimSeason Season = static_cast<ESimSeason>(SeasonIndex);
+	const FSimSeasonClimateSettings& ClimateSettings = ActiveClimate->GetSeasonSettings(Season);
+
+	Conditions.TemperatureCelsius += ClimateSettings.TemperatureOffsetCelsius;
+	Conditions.HumidityPercent = FMath::Clamp(Conditions.HumidityPercent + ClimateSettings.HumidityOffsetPercent,
+	                                          0.0f, 100.0f);
+	Conditions.WindSpeedKmh = FMath::Max(0.0f, Conditions.WindSpeedKmh * ClimateSettings.WindMultiplier);
+
 	return Conditions;
 }
 
 void USimWeatherComponent::InitializeWeather()
 {
 	if (!GetOwner() || !GetOwner()->HasAuthority()) return;
+
+	if (!ActiveClimate)
+	{
+		ActiveClimate = DefaultClimate;
+	}
+
+	if (!ActiveClimate || ActiveClimate->ClimateId.IsNone())
+	{
+		UE_LOG(LogTemp, Error, TEXT("Weather: No valid climate profile configured."));
+		return;
+	}
 
 	WorldClock = GetOwner()->FindComponentByClass<USimWorldClockComponent>();
 
@@ -143,7 +169,7 @@ void USimWeatherComponent::HandleClockRestored()
 
 FName USimWeatherComponent::GetWeatherIdForDay(int64 AbsoluteDay) const
 {
-	if (!WorldClock || !WorldClock->IsClockReady() || AbsoluteDay < 0) return NAME_None;
+	if (!WorldClock || !WorldClock->IsClockReady() || AbsoluteDay < 0 || !ActiveClimate) return NAME_None;
 
 	const int64 DaysPerSeason = WorldClock->GetDaysPerSeason();
 
@@ -170,7 +196,8 @@ FName USimWeatherComponent::GetWeatherIdForDay(int64 AbsoluteDay) const
 
 		SeenIds.Add(Definition->WeatherId);
 
-		const float Weight = Definition->GetWeightForSeason(Season);
+		const float Weight = Definition->GetWeightForSeason(Season) * ActiveClimate->GetWeatherMultiplier(
+			Definition->WeatherId);
 
 		if (!FMath::IsFinite(Weight) || Weight <= 0.0F) continue;
 
@@ -207,6 +234,56 @@ FName USimWeatherComponent::GetWeatherIdForDay(int64 AbsoluteDay) const
 	return Candidates.Last().Id;
 }
 
+USimClimateData* USimWeatherComponent::FindClimateDefinition(FName ClimateId) const
+{
+	if (ClimateId.IsNone()) return nullptr;
+	if (DefaultClimate && DefaultClimate->ClimateId == ClimateId) return DefaultClimate;
+
+	for (auto Climate : AvailableClimates)
+	{
+		if (Climate && Climate->ClimateId == ClimateId)
+		{
+			return Climate;
+		}
+	}
+
+	return nullptr;
+}
+
+FSimWeatherSaveData USimWeatherComponent::CreateSaveData() const
+{
+	FSimWeatherSaveData Data;
+
+	if (!GetOwner() || !GetOwner()->HasAuthority() || !ActiveClimate || ActiveClimate->ClimateId.IsNone() || !
+		WeatherState.bInitialized)
+		return Data;
+
+	Data.bInitialized = true;
+	Data.ClimateId = ActiveClimate->ClimateId;
+	Data.WeatherSeed = WeatherSeed;
+
+	return Data;
+}
+
+bool USimWeatherComponent::RestoreFromSaveData(const FSimWeatherSaveData& SaveData)
+{
+	if (!GetOwner() || !GetOwner()->HasAuthority() || !SaveData.bInitialized) return false;
+
+	USimClimateData* SavedClimate = FindClimateDefinition(SaveData.ClimateId);
+
+	if (!SavedClimate)
+	{
+		UE_LOG(LogTemp, Error, TEXT("Weather: Missing saved climate '%s'."), *SaveData.ClimateId.ToString());
+		return false;
+	}
+
+	ActiveClimate = SavedClimate;
+	WeatherSeed = SaveData.WeatherSeed;
+
+	UE_LOG(LogTemp, Log, TEXT("Weather: Restored climate '%s'."), *ActiveClimate->ClimateId.ToString());
+	return true;
+}
+
 void USimWeatherComponent::GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
@@ -227,7 +304,8 @@ void USimWeatherComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void USimWeatherComponent::RefreshWeather()
 {
-	if (!GetOwner() || !GetOwner()->HasAuthority() || !WorldClock || !WorldClock->IsClockReady()) return;
+	if (!GetOwner() || !GetOwner()->HasAuthority() || !WorldClock || !WorldClock->IsClockReady() || !ActiveClimate)
+		return;
 
 	const int64 CurrentDay = FMath::FloorToInt64(WorldClock->GetGameTimeSeconds() / 86400.0);
 	const FName TodayWeather = GetWeatherIdForDay(CurrentDay);
@@ -243,12 +321,14 @@ void USimWeatherComponent::RefreshWeather()
 
 	if (WeatherState.bInitialized && WeatherState.AbsoluteDay == CurrentDay && WeatherState.CurrentWeatherId ==
 		TodayWeather && WeatherState.TomorrowWeatherId == TomorrowWeather && FMath::IsNearlyEqual(
-			WeatherState.TransitionDurationGameSeconds, TransitionDuration))
+			WeatherState.TransitionDurationGameSeconds,
+			TransitionDuration) && WeatherState.ClimateId == ActiveClimate->ClimateId)
 		return;
 
 	const FSimWeatherState PreviousState = WeatherState;
 	const int64 PreviousDay = FMath::Max(static_cast<int64>(0), CurrentDay - 1);
 
+	WeatherState.ClimateId = ActiveClimate->ClimateId;
 	WeatherState.PreviousDayConditions = GetConditionsForDay(PreviousDay);
 	WeatherState.TodayConditions = GetConditionsForDay(CurrentDay);
 	WeatherState.CurrentWeatherId = TodayWeather;

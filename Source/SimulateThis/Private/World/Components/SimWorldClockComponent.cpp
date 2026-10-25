@@ -1,8 +1,7 @@
 ﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 
-#include "World/SimWorldClockComponent.h"
-
+#include "World/Components/SimWorldClockComponent.h"
 #include "GameFramework/GameStateBase.h"
 #include "Net/UnrealNetwork.h"
 #include "World/SimWorldSaveGame.h"
